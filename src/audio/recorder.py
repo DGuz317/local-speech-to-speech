@@ -2,88 +2,87 @@ import pyaudio
 import wave
 import os
 
-CHUNK = 512
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 44100
-RECORD_SECONDS = 5
-SAVE_FOLDER = r"C:/Users/ADMIN/OneDrive/Desktop/STS/local-speech-to-speech/data/samples/"
-os.makedirs(SAVE_FOLDER, exist_ok=True)
-WAVE_OUTPUT_FILENAME = os.path.join(SAVE_FOLDER, "myaudio.wav")
+class AudioRecorder:
+    def __init__(self, save_folder, filename="myaudio.wav", rate=44100, chunk=512, channels=1, format=pyaudio.paInt16):
+        self.save_folder = save_folder
+        self.filename = filename
+        self.rate = rate
+        self.chunk = chunk
+        self.channels = channels
+        self.format = format
+        self.frames = []
+        self.wave_output_path = os.path.join(self.save_folder, self.filename)
+        os.makedirs(self.save_folder, exist_ok=True)
+        self.p = pyaudio.PyAudio()
+        self.stream = None
 
-p = pyaudio.PyAudio()
-stream = None
-wf = None
-
-try:
-    # Open audio stream
-    stream = p.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    input=True,
-                    frames_per_buffer=CHUNK)
-
-    print("* Recording started...")
-    print(f"  Duration: {RECORD_SECONDS} seconds")
-    frames = []
-
-    # Record audio
-    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+    def record(self):
         try:
-            data = stream.read(CHUNK, exception_on_overflow=False)
-            frames.append(data)
-        except IOError as e:
-            print(f"Warning: Buffer overflow - continuing...")
-            continue
+            self.stream = self.p.open(format=self.format,
+                                      channels=self.channels,
+                                      rate=self.rate,
+                                      input=True,
+                                      frames_per_buffer=self.chunk)
 
-    print("* Recording complete")
-    
-    # Save the recorded audio file
-    if frames:
-        wf = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(p.get_sample_size(FORMAT))
-        wf.setframerate(RATE)
-        wf.writeframes(b''.join(frames))
-        
-        # Calculate file info
-        duration = len(frames) * CHUNK / RATE
-        file_size = os.path.getsize(WAVE_OUTPUT_FILENAME) / 1024  # KB
-        
-        print(f"✓ Saved to {WAVE_OUTPUT_FILENAME}")
-        print(f"  Duration: {duration:.1f} seconds")
-        print(f"  Size: {file_size:.1f} KB")
-    else:
-        print("✗ No audio data recorded")
+            print("* Recording started... Press Ctrl+C to stop")
+            self.frames = []
 
-except IOError as e:
-    print(f"✗ Recording failed: {e}")
-    print("Check that your microphone is connected and not in use.")
-except KeyboardInterrupt:
-    print("\n✗ Recording interrupted by user")
-except Exception as e:
-    print(f"✗ Unexpected error: {e}")
-    
-finally:
-    # Cleanup stream
-    if stream is not None:
+            while True:
+                try:
+                    data = self.stream.read(self.chunk, exception_on_overflow=False)
+                    self.frames.append(data)
+                except IOError:
+                    print("Warning: Buffer overflow - continuing...")
+                    continue
+
+        except KeyboardInterrupt:
+            print("\n* Recording stopped by user")
+        except Exception as e:
+            print(f"✗ Recording failed: {e}")
+
+    def save(self):
+        if not self.frames:
+            print("✗ No audio data recorded")
+            return
+
         try:
-            if stream.is_active():
-                stream.stop_stream()
-            stream.close()
+            with wave.open(self.wave_output_path, 'wb') as wf:
+                wf.setnchannels(self.channels)
+                wf.setsampwidth(self.p.get_sample_size(self.format))
+                wf.setframerate(self.rate)
+                wf.writeframes(b''.join(self.frames))
+
+            duration = len(self.frames) * self.chunk / self.rate
+            file_size = os.path.getsize(self.wave_output_path) / 1024  # KB
+
+            print(f"✓ Saved to {self.wave_output_path}")
+            print(f"  Duration: {duration:.1f} seconds")
+            print(f"  Size: {file_size:.1f} KB")
+
+        except Exception as e:
+            print(f"✗ Saving failed: {e}")
+
+    def cleanup(self):
+        try:
+            if self.stream and self.stream.is_active():
+                self.stream.stop_stream()
+            if self.stream:
+                self.stream.close()
+            self.p.terminate()
         except:
             pass
-    
-    # Cleanup PyAudio
-    if p is not None:
+
+    def run(self):
         try:
-            p.terminate()
-        except:
-            pass
-    
-    # Cleanup wave file
-    if wf is not None:
-        try:
-            wf.close()
-        except:
-            pass
+            self.record()
+        finally:
+            self.save()
+            self.cleanup()
+
+
+if __name__ == "__main__":
+    recorder = AudioRecorder(
+        save_folder=r"C:/Users/ADMIN/OneDrive/Desktop/STS/local-speech-to-speech/data/samples/",
+        filename="myaudio.wav"
+    )
+    recorder.run()
